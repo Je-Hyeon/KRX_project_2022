@@ -16,6 +16,15 @@ from sklearn.metrics import silhouette_score
 import chart_studio
 import plotly.express as px
 
+@njit(cache=True)
+def cal_dist(center, pointList):
+    """다른 함수에서 참고하는 거리 계산용
+    """
+    result = []
+    for point in pointList:
+        result.append(np.linalg.norm(center - point))
+    return result
+
 class MyKmeans:
 
     def __init__(self, data):
@@ -28,6 +37,10 @@ class MyKmeans:
         self.__data = data.values
         self.__index = data.index
         self.__columns = data.columns
+
+        self.__optimal_random_state = None
+
+        self.set_params()
 
     def set_params(
         self,
@@ -42,15 +55,6 @@ class MyKmeans:
         """
         self.__max_iter = max_iter
         self.__tol = tol
-
-    @njit(cache=True)
-    def cal_dist(center, pointList):
-        """다른 함수에서 참고하는 거리 계산용
-        """
-        result = []
-        for point in enumerate(pointList):
-            result.append(np.linalg.norm(center - point))
-        return result
 
     def find_optimal_k(
         self,
@@ -74,7 +78,7 @@ class MyKmeans:
             result = {}
             for trial in tqdm(range(max_sample)):
                 each_trial = []
-                for k in range(1, max_k+1):
+                for k in range(2, max_k+1):
                     model = KMeans(n_clusters=k, init="k-means++", n_init=1, max_iter=self.__max_iter, tol=self.__tol, random_state=trial)
                     model.fit(self.__data)
                     each_trial.append(model.inertia_)
@@ -84,7 +88,7 @@ class MyKmeans:
             result = {}
             for trial in tqdm(range(max_sample)):
                 each_trial = []
-                for k in range(1, max_k+1):
+                for k in range(2, max_k+1):
                     if k == 1:
                         each_trial.append(0)
                     else:
@@ -92,13 +96,23 @@ class MyKmeans:
                         model.fit(self.__data)
                         each_trial.append(silhouette_score(self.__data, model.labels_))
                 result[trial] = each_trial
+            
+            tmp = []
+            for j in range(len(result[0])):
+                tmp_tmp = []
+                for i in range(len(result)):
+                    tmp_tmp.append(result[i][j])
+                tmp.append(tmp_tmp)
+
+            tmp = [np.nanmean(a) for a in tmp]
+            self.__optimal_k = tmp.index(np.max(tmp))+2
                 
         elif optimize_method == "inter_std":
             result = {"dist_mean":[], "dist_std":[]}
             for trial in tqdm(range(max_sample)):
                 distance_mean = []
                 distance_std = []
-                for k in range(1, max_k+1):
+                for k in range(2, max_k+1):
                     model = KMeans(n_clusters=k, init="k-means++", n_init=1, max_iter=self.__max_iter, tol=self.__tol, random_state=trial)
                     model.fit(self.__data)
 
@@ -121,7 +135,7 @@ class MyKmeans:
                         centroid_point = np.array(centroid_df.iloc[j,0:len(centroid_df.columns)-1])
                         each_points = np.array(cluster_df[cluster_df['cluster']==target_cluster].iloc[:,0:len(cluster_df.columns)-1])
 
-                        each_iter = self.cal_dist(centroid_point, each_points) # 클러스터 중심점과 각 점마다가의 거리를 계산하여, 리스트로 표현, 원소 하나가 거리 하나
+                        each_iter = cal_dist(centroid_point, each_points) # 클러스터 중심점과 각 점마다가의 거리를 계산하여, 리스트로 표현, 원소 하나가 거리 하나
                         distance_list.append(each_iter) # jth 클러스터 안의 거리들을 하나의 리스트에 넣어줌
 
                     distance_list = [item for subList in distance_list for item in subList] # (리스트 안의) 리스트들을 풀어서 전부 각각의 원소로 바꾸어줌
@@ -159,6 +173,7 @@ class MyKmeans:
                 model = KMeans(n_clusters=num_of_cluster, init="k-means++", n_init=1, max_iter=self.__max_iter, tol=self.__tol, random_state=trial)
                 model.fit(self.__data)
                 result[trial] = model.inertia_
+            self.__optimal_random_state = [trial for trial in result.keys() if result[trial] == np.min(list(result.values()))][0]
 
         elif optimize_method == "silhouette":
             result = {}
@@ -166,6 +181,7 @@ class MyKmeans:
                 model = KMeans(n_clusters=num_of_cluster, init="k-means++", n_init=1, max_iter=self.__max_iter, tol=self.__tol, random_state=trial)
                 model.fit(self.__data)
                 result[trial] = silhouette_score(self.__data, model.labels_)
+            self.__optimal_random_state = [trial for trial in result.keys() if result[trial] == np.min(list(result.values()))][0]
 
         elif optimize_method == "inter_std":
             result = {"dist_mean":[], "dist_std":[]}
@@ -195,22 +211,25 @@ class MyKmeans:
                     centroid_point = np.array(centroid_df.iloc[j,0:len(centroid_df.columns)-1])
                     each_points = np.array(cluster_df[cluster_df['cluster']==target_cluster].iloc[:,0:len(cluster_df.columns)-1])
 
-                    each_iter = self.cal_dist(centroid_point, each_points) # 클러스터 중심점과 각 점마다가의 거리를 계산하여, 리스트로 표현, 원소 하나가 거리 하나
+                    each_iter = cal_dist(centroid_point, each_points) # 클러스터 중심점과 각 점마다가의 거리를 계산하여, 리스트로 표현, 원소 하나가 거리 하나
                     distance_list.append(each_iter) # jth 클러스터 안의 거리들을 하나의 리스트에 넣어줌
 
                 distance_list = [item for subList in distance_list for item in subList] # (리스트 안의) 리스트들을 풀어서 전부 각각의 원소로 바꾸어줌
                 distance_mean.append(np.mean(distance_list))
                 distance_std.append(np.std(distance_list))
             
-            result["dist_mean"].append([trial, distance_mean]) # distance_mean이라는 length가 max_k인 리스트를 원소로 가지는 리스트 (length가 max_sample)
-            result["dist_std"].append([trial, distance_std])
+                result["dist_mean"].append([trial, distance_mean]) # distance_mean이라는 length가 max_k인 리스트를 원소로 가지는 리스트 (length가 max_sample)
+                result["dist_std"].append([trial, distance_std])
+
+            minium_std = np.min([dist[1][0] for dist in result["dist_std"]])
+            self.__optimal_random_state = [simul[0] for simul in result["dist_std"] if simul[1][0] == minium_std][0]
 
         return result
         
     def run_kmean(
         self,
-        num_of_cluster,
-        random_state
+        num_of_cluster=None,
+        random_state=None
     ):
         """K-Mean 클러스터링을 돌린다
 
@@ -221,10 +240,20 @@ class MyKmeans:
         Return:
             주어진 데이터로 fitted 된 k-means model
         """
+        if num_of_cluster == None:
+            num_of_cluster = self.__optimal_k
+        if random_state == None:
+            random_state = self.__optimal_random_state
+
         model = KMeans(n_clusters=num_of_cluster, init="k-means++", n_init=1, max_iter=self.__max_iter, tol=self.__tol, random_state=random_state)
         model.fit(self.__data)
 
-        return model
+        result = {
+            "num_of_cluseer":num_of_cluster,
+            "random_state":random_state,
+            "model":model
+        }
+        return result
     
     @staticmethod
     def distance_decomposition(
@@ -268,18 +297,51 @@ class MyKmeans:
         return decomposed_distance_matrix
 
     @staticmethod
-    def visualize(
+    def visualize_2d(
         raw_data,
         fitted_model,
         demensional_reduction_model = "pca",
         fig_title = "figure",
         online = False,
     ):
+        if type(raw_data) == pd.core.frame.DataFrame:
+            raw_data = raw_data.values
+
+        if demensional_reduction_model == "mds":
+            demensional_reduction_model = MDS(n_components=2)
+            tmp_columns = ["MD1", "MD2"]
+        elif demensional_reduction_model == "pca":
+            demensional_reduction_model = PCA(n_components=2)
+            tmp_columns = ["PC1", "PC2"]
+        
+        labels = pd.DataFrame(fitted_model.predict(raw_data), columns=["label"])
+        reducted_points = pd.DataFrame(demensional_reduction_model.fit_transform(raw_data), columns=tmp_columns)
+        
+        result_df = pd.concat([reducted_points, labels], axis=1)
+
+        fig = px.scatter(result_df, x=tmp_columns[0], y=tmp_columns[1], color='label', title=fig_title)
+        
+        if online:
+            chart_studio.plotly.plot(fig, auto_open=True)
+        else:
+            fig.write_html("fig.html", auto_open=True)
+
+    @staticmethod
+    def visualize_3d(
+        raw_data,
+        fitted_model,
+        demensional_reduction_model = "pca",
+        fig_title = "figure",
+        online = False,
+    ):
+        if type(raw_data) == pd.core.frame.DataFrame:
+            raw_data = raw_data.values
+
         if demensional_reduction_model == "mds":
             demensional_reduction_model = MDS(n_components=3)
             tmp_columns = ["MD1", "MD2", "MD3"]
         elif demensional_reduction_model == "pca":
-            demensional_reduction_model = PCA(n_compnents=3)
+            demensional_reduction_model = PCA(n_components=3)
             tmp_columns = ["PC1", "PC2", "PC3"]
         
         labels = pd.DataFrame(fitted_model.predict(raw_data), columns=["label"])

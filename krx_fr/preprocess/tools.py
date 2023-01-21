@@ -1,6 +1,6 @@
 
 import os
-
+import numpy as np
 import pandas as pd
 
 def read_data_from_folder(folder):
@@ -14,7 +14,7 @@ def read_data_from_folder(folder):
 
     return result
 
-def dict_data_preprocess(input_data_dict:dict, function, window_size="M", fillna=True, start_date="2012-01-01", end_date="2022-12-31"):
+def dict_data_preprocess(input_data_dict, function, window_size="M", fillna=True, start_date="2012-01-01", end_date="2022-12-31"):
     """
     data_list : [list] -> Factor들의 데이터프레임이 담긴 리스트를 받습니다
        column_list : [list] -> data_list의 순서와 일치하는 Factor명의 리스트를 받습니다 
@@ -26,8 +26,14 @@ def dict_data_preprocess(input_data_dict:dict, function, window_size="M", fillna
     end_index = pd.date_range(start=start_date,end=end_date,freq=window_size)
     final_dict = {}
     for start_idx, end_idx in zip(start_index, end_index): #t=0,1...이런 식으로 진행
-
         column_list = []
+
+        if type(input_data_dict) == pd.DataFrame:
+            input_data_dict.index = pd.to_datetime(input_data_dict.index)
+            one_df = function(input_data_dict.loc[start_idx:end_idx], axis=0)
+            final_dict[str(start_idx)[:10]] = one_df
+            continue
+        
         for i, key in enumerate(input_data_dict.keys()):
             column_list.append(key)
             df = input_data_dict[key]
@@ -138,3 +144,49 @@ def dict_data_concat(report_dict: dict, financial_dict:dict, dropna=True):
         concat_df.columns = concat_key
         return_dict[key] = concat_df
     return return_dict
+
+def dict_data_capial_screener(input_data_dict:dict, screen_min_value=0, 
+                       screen_max_value=np.inf):
+    '''
+    역할) 총자본의 min_value와 max_value 사이의 값을 가지는 회사만 스크리닝한다
+            -> 마지막에 회사 컬럼도 자동으로 맞춰서 전부 추가한다
+    [중요]
+    1. input_data_dict에 반드시 "총자본" 데이터프레임이 포함되어 있어야함!!!
+    2. 반드시 dict_data_concat을 통과시킨 딕셔너리를 input으로 줘야함!
+    '''
+    return_dict = {}
+    for t, df in input_data_dict.items():
+        idx = df.index
+        capital = df["총자본"].values
+        screen_idx = (capital >=screen_min_value) & (capital <= screen_max_value)
+        tmp_df = df.loc[screen_idx, :].reindex(idx,axis=0)
+        return_dict[t] = tmp_df
+    return return_dict
+
+def dict_data_calculate_vol(input_data_dict:dict, name:str,
+                             return_abs=False, return_original=False):
+    '''
+    [중요!!] 반드시 dict_data_preprocess를 통과시키지 *않은* 데이터프레임을 넣어야함!!
+    
+    * name -> 변동성을 구할 변수명
+    * return_abs -> 변동성의 절댓값을 리턴할 지 결정
+    * return_original -> 변동성을 구하는 변수의 원본을 반환할지 결정
+    '''
+    dict = input_data_dict
+    tmp_df = dict[name].copy()
+    new_name = "{}_변동성".format(name)
+
+    dict[new_name] = tmp_df.pct_change(fill_method="bfill")
+    if return_original == False:
+        dict[new_name] = tmp_df.pct_change(fill_method="bfill")
+        del dict[name]
+
+    if return_abs == True:
+        dict[new_name] = np.abs(dict[new_name])
+    return dict
+
+def dict_data_market_screener(input_data_dict, name:str):
+    if type(input_data_dict) == pd.DataFrame():
+        continue
+    else: # 딕셔너리가 들어오는 경우
+        
