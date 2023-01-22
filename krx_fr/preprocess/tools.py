@@ -1,7 +1,8 @@
 
 import os
-import numpy as np
+
 import pandas as pd
+import numpy as np
 
 def read_data_from_folder(folder):
     # 사용할 데이터를 불러오겠습니다 
@@ -145,7 +146,24 @@ def dict_data_concat(report_dict: dict, financial_dict:dict, dropna=True):
         return_dict[key] = concat_df
     return return_dict
 
-def dict_data_capial_screener(input_data_dict:dict, screen_min_value=0, 
+# Dictionary Index Match
+def dict_data_match_index(dict_data_list:list) -> list:
+    index_list = [dict_data_list[i][list(dict_data_list[i].keys())[0]].index for i in range(len(dict_data_list))]
+    good_index = index_list[0]
+    for i in range(1, len(index_list)):
+        good_index = list(set(good_index) & set(index_list[i]))
+
+    good_index = sorted(good_index)
+
+    result = []
+    for dict_data in dict_data_list:
+        for key in dict_data.keys():
+            dict_data[key] = dict_data[key].loc[good_index]
+        result.append(dict_data)
+
+    return result
+
+def dict_data_capital_screener(input_data_dict:dict, screen_min_value=0, 
                        screen_max_value=np.inf):
     '''
     역할) 총자본의 min_value와 max_value 사이의 값을 가지는 회사만 스크리닝한다
@@ -185,8 +203,21 @@ def dict_data_calculate_vol(input_data_dict:dict, name:str,
         dict[new_name] = np.abs(dict[new_name])
     return dict
 
-def dict_data_market_screener(input_data_dict, name:str):
-    if type(input_data_dict) == pd.DataFrame():
-        continue
-    else: # 딕셔너리가 들어오는 경우
-        
+def dict_data_market_screener(input_data_dict,market='2'):
+    '''input_data_dict -> dict or DataFrame : {지표:DataFrame}꼴의 딕셔너리를 받습니다
+    market -> str : 1은 코스피, 2는 코스닥 기업을 리턴합니다
+    * input_data_dict에 딕셔너리가 아닌 데이터프레임을 주는 것도 가능합니다 (아직 미구현)*
+    '''
+    flag_df = pd.read_csv("기업코드_시장.csv", index_col=0)
+    fianl_dict= {}
+
+    for name, df in input_data_dict.items():
+        if market =='2':
+            flag_df = flag_df.loc[flag_df["시장"]=='코스닥']
+            return_df = pd.merge(df.T, flag_df, left_index=True, right_on="기업공시코드").drop("시장", axis=1)
+            fianl_dict[name] = return_df
+        else:
+            flag_df = flag_df.loc[flag_df["시장"]=='코스피']
+            return_df = pd.merge(df.T, flag_df, left_index=True, right_on="기업공시코드")
+            fianl_dict[name] = return_df
+    return fianl_dict

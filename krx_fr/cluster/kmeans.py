@@ -16,6 +16,8 @@ from sklearn.metrics import silhouette_score
 import chart_studio
 import plotly.express as px
 
+import matplotlib.pyplot as plt
+
 @njit(cache=True)
 def cal_dist(center, pointList):
     """다른 함수에서 참고하는 거리 계산용
@@ -60,7 +62,8 @@ class MyKmeans:
         self,
         max_k,
         max_sample,
-        optimize_method = "inertia"
+        optimize_method = "inertia",
+        off_tqdm = False
     ):
         """Optimal Number of Cluster를 찾아준다.
         
@@ -76,7 +79,7 @@ class MyKmeans:
         """
         if optimize_method == "inertia":
             result = {}
-            for trial in tqdm(range(max_sample)):
+            for trial in tqdm(range(max_sample), disable=off_tqdm):
                 each_trial = []
                 for k in range(2, max_k+1):
                     model = KMeans(n_clusters=k, init="k-means++", n_init=1, max_iter=self.__max_iter, tol=self.__tol, random_state=trial)
@@ -86,7 +89,7 @@ class MyKmeans:
 
         elif optimize_method == "silhouette":
             result = {}
-            for trial in tqdm(range(max_sample)):
+            for trial in tqdm(range(max_sample), disable=off_tqdm):
                 each_trial = []
                 for k in range(2, max_k+1):
                     if k == 1:
@@ -104,12 +107,12 @@ class MyKmeans:
                     tmp_tmp.append(result[i][j])
                 tmp.append(tmp_tmp)
 
-            tmp = [np.nanmean(a) for a in tmp]
+            tmp = [np.mean(a) for a in tmp]
             self.__optimal_k = tmp.index(np.max(tmp))+2
                 
         elif optimize_method == "inter_std":
             result = {"dist_mean":[], "dist_std":[]}
-            for trial in tqdm(range(max_sample)):
+            for trial in tqdm(range(max_sample), disable=off_tqdm):
                 distance_mean = []
                 distance_std = []
                 for k in range(2, max_k+1):
@@ -153,7 +156,8 @@ class MyKmeans:
         self,
         num_of_cluster,
         max_sample,
-        optimize_method = "inertia"
+        optimize_method = "inertia",
+        off_tqdm = False
     ):
         """K-means 클러스터링을 위한 최적의 시작점을 찾는다
 
@@ -169,7 +173,7 @@ class MyKmeans:
         """
         if optimize_method == "inertia":
             result = {}
-            for trial in tqdm(range(max_sample)):
+            for trial in tqdm(range(max_sample), disable=off_tqdm):
                 model = KMeans(n_clusters=num_of_cluster, init="k-means++", n_init=1, max_iter=self.__max_iter, tol=self.__tol, random_state=trial)
                 model.fit(self.__data)
                 result[trial] = model.inertia_
@@ -177,7 +181,7 @@ class MyKmeans:
 
         elif optimize_method == "silhouette":
             result = {}
-            for trial in tqdm(range(max_sample)):
+            for trial in tqdm(range(max_sample), disable=off_tqdm):
                 model = KMeans(n_clusters=num_of_cluster, init="k-means++", n_init=1, max_iter=self.__max_iter, tol=self.__tol, random_state=trial)
                 model.fit(self.__data)
                 result[trial] = silhouette_score(self.__data, model.labels_)
@@ -185,7 +189,7 @@ class MyKmeans:
 
         elif optimize_method == "inter_std":
             result = {"dist_mean":[], "dist_std":[]}
-            for trial in tqdm(range(max_sample)):
+            for trial in tqdm(range(max_sample), disable=off_tqdm):
                 distance_mean = []
                 distance_std = []
 

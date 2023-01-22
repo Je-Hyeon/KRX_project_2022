@@ -8,7 +8,6 @@ import numpy as np
 from tqdm import tqdm
 
 from .kmeans import MyKmeans
-from ..preprocess.tools import dict_data_drop
 
 class Optimizer:
 
@@ -23,18 +22,22 @@ class Optimizer:
                 raise ValueError("Please set the number_of_cluster")
             elif raw_data.keys() != number_of_cluster.keys():
                 raise ValueError("keys for raw_data and number_of_cluster do not match")
+        else:
+            self.set_optimize_k()
         
         if not self.__isOptimize_init_point:
             if init_point == None:
                 raise ValueError("Please set the init_point")
             elif raw_data.keys() != init_point.keys():
                 raise ValueError("keys for raw_data and init_point do not match")
+        else:
+            self.set_optimize_initp()
 
         self.__raw_data = raw_data
         self.__number_of_cluster = number_of_cluster
         self.__init_point = init_point
     
-    def set_optimize_k(self, max_k, max_sample=500):
+    def set_optimize_k(self, max_k=10, max_sample=500):
         """Init_point optimization 파라미터 설정
         
         Args:
@@ -71,15 +74,17 @@ class Optimizer:
         for each_data in tqdm(self.__raw_data.keys(), desc="Optimizing 'k' and 'init_point'..."):
             tmp_model = MyKmeans(self.__raw_data[each_data])
             tmp_model.set_params(self.__max_iter, self.__tol)
-            k = self.__number_of_cluster[each_data]
-            init_point = self.__init_point[each_data]
 
             if self.__isOptimize_number_of_cluster:
-                tmp_model.find_optimal_k(self.__optimize_k_max_k, self.__optimize_k_max_sample, "silhouette")
+                tmp_model.find_optimal_k(self.__optimize_k_max_k, self.__optimize_k_max_sample, "silhouette", off_tqdm=True)
                 k = None
+            else:
+                k = self.__number_of_cluster[each_data]
             if self.__isOptimize_init_point:
-                tmp_model.find_optimal_initp(k, self.__optimize_initp_max_sample, self.__optimize_initp_method)
+                tmp_model.find_optimal_initp(k, self.__optimize_initp_max_sample, self.__optimize_initp_method, off_tqdm=True)
                 init_point = None
+            else:
+                init_point = self.__init_point[each_data]
             
             initial_setting[each_data] = [k, init_point]
 
@@ -89,21 +94,24 @@ class Optimizer:
 
             result_train_data_accuracy = {}
 
-            combinations_cnt = 0
-            currently_droped = []
-            while True:
-                tmp_combinations = list(combinations(self.__raw_data[each_data].columns, combinations_cnt))
-                tmp_combinations = [list(tmp) for tmp in tmp_combinations if len((set(tmp)) - set(currently_droped)) != len(tmp)]
+            max_accuracy_std = 0
 
-                accuracy_std_list = []
-                for combination in tqdm(tmp_combinations, desc="Optimizing variable..."):
+            combinations_cnt = 0
+            # currently_droped = [tmp[0] for tmp in list(combinations(self.__raw_data[each_data].columns, combinations_cnt))]
+            while True:
+                isCombinationChanged = False
+                if combinations_cnt == 0:
+                    combination = []
+                    accuracy_std_list = []
                     for train_data in train_data_list:
-                        tmp_model = MyKmeans(self.__raw_data[each_data].drop(combination, axis=1))
+                        tmp_model = MyKmeans(self.__raw_data[train_data])
                         tmp_model.set_params(self.__max_iter, self.__tol)
                         tmp_model_result = tmp_model.run_kmean(initial_setting[train_data][0], initial_setting[train_data][1])
                         
-                        cluster = pd.DataFrame(tmp_model_result[2].predict(self.__raw_data[each_data]))
+                        cluster = pd.DataFrame(tmp_model_result["model"].predict(self.__raw_data[train_data].values))
                         label = pd.DataFrame(labels[train_data])
+                        cluster.index = self.__raw_data[train_data].index
+                        label.index = self.__raw_data[train_data].index
 
                         cluster_with_label = pd.concat([cluster, label], axis=1)
                         cluster_with_label.columns = ["cluster", "label"]
@@ -111,50 +119,56 @@ class Optimizer:
                         tmp_accuracy_list = []
                         for k in range(initial_setting[train_data][0]):
                             tmp = cluster_with_label[cluster_with_label["cluster"] == k]
-                            tmp_accuracy_list.append(tmp["label"].sum()/len(tmp))
+                            # print(tmp)
+                            # print(tmp["label"].sum()/len(tmp))
+                            tmp_accuracy_list.append(tmp["label"].sum()/len(label))
 
-                    accuracy_std_list.append(np.std(tmp_accuracy_list))
+                        accuracy_std_list.append(np.std(tmp_accuracy_list))
 
-                break
-
-                while True:
+                else:
                     tmp_combinations = list(combinations(self.__raw_data[each_data].columns, combinations_cnt))
-                    tmp_combinations = [list(tmp) for tmp in tmp_combinations if len((set(tmp)) - set(currently_droped)) != len(tmp)]
-                    isStdChanged = False
+                    tmp_combinations = [list(tmp) for tmp in tmp_combinations if len((set(tmp)) - set(currently_droped)) == len(tmp)-len(currently_droped)]
 
-                    for combination in tmp_combinations:
-                        tmp_model = MyKmeans(self.__raw_data[each_data].drop(combination, axis=1))
-                        tmp_model.set_params(self.__max_iter, self.__tol)
-                        tmp_model_result = tmp_model.run_kmean(initial_setting[train_data][0], initial_setting[train_data][1])
-                        
-                        cluster = pd.DataFrame(tmp_model_result[2].predict(self.__raw_data[each_data]))
-                        label = pd.DataFrame(labels[train_data])
+                    accuracy_std_list = []
+                    # print(tmp_combinations)
+                    for combination in tqdm(tmp_combinations, desc="Optimizing variable(depth={})...".format(combinations_cnt)):
+                        for train_data in train_data_list:
+                            tmp_model = MyKmeans(self.__raw_data[train_data].drop(combination, axis=1))
+                            tmp_model.set_params(self.__max_iter, self.__tol)
+                            tmp_model_result = tmp_model.run_kmean(initial_setting[train_data][0], initial_setting[train_data][1])
+                            
+                            cluster = pd.DataFrame(tmp_model_result["model"].predict(self.__raw_data[train_data].drop(combination, axis=1).values))
+                            label = pd.DataFrame(labels[train_data])
+                            cluster.index = self.__raw_data[train_data].index
+                            label.index = self.__raw_data[train_data].index
 
-                        cluster_with_label = pd.concat([cluster, label], axis=1)
-                        cluster_with_label.columns = ["cluster", "label"]
+                            cluster_with_label = pd.concat([cluster, label], axis=1)
+                            cluster_with_label.columns = ["cluster", "label"]
 
-                        label_accuracy = []
-                        for k in range(initial_setting[train_data][0]):
-                            tmp = cluster_with_label[cluster_with_label["cluster"] == k]
-                            label_accuracy.append(tmp["label"].sum()/len(tmp))
+                            tmp_accuracy_list = []
+                            for k in range(initial_setting[train_data][0]):
+                                tmp = cluster_with_label[cluster_with_label["cluster"] == k]
+                                # print(tmp)
+                                # print(tmp["label"].sum()/len(tmp))
+                                tmp_accuracy_list.append(tmp["label"].sum()/len(label))
 
-                        tmp_std = np.std(label_accuracy)
-                        if tmp_std > max_accuracy_std:
-                            max_label_accuracy = label_accuracy
-                            max_accuracy_std = tmp_std
-                            max_accuracy_combination = combination
-                            isStdChanged = True
+                        accuracy_std_list.append(np.std(tmp_accuracy_list))
 
+                # print(np.mean(accuracy_std_list))
+                if max_accuracy_std < np.mean(accuracy_std_list):
+                    max_accuracy_std = np.mean(accuracy_std_list)
+                    best_combination = combination
+                    isCombinationChanged = True
+
+                if not isCombinationChanged:
+                    result_train_data_accuracy = {"accuracy_std":max_accuracy_std, "combination":best_combination}
+                    self.__init_params = initial_setting
+                    self.__optimized_result = result_train_data_accuracy
+                    break
+                else:
                     combinations_cnt += 1
-                    currently_droped = max_accuracy_combination
-
-                    if not isStdChanged:
-                        break
-
-                result_train_data_accuracy[train_data] = {"label_accuracy":max_label_accuracy, "accuracy_std":max_accuracy_std, "combination":max_accuracy_combination}
-            
-            self.__init_params = initial_setting
-            self.__optimized_result = result_train_data_accuracy
+                    currently_droped = best_combination
+                    # print(currently_droped)
             
         print("Jobs Done")
 
