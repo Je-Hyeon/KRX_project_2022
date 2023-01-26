@@ -228,7 +228,7 @@ class Optimizer:
             return self.__optimized_result
         except:
             raise Exception("No optimization result exists")
-
+        
     @staticmethod
     def eval(model, data, label):
         """
@@ -249,6 +249,10 @@ class Optimizer:
             tmp = cluster_with_label[cluster_with_label["cluster"] == cluster]
             cluster_accuracy[cluster] = tmp["label"].sum()/len(label)
         
+        original_accuracy = {}
+        for key in cluster_accuracy:
+            original_accuracy[key] = cluster_accuracy[key]
+
         #print("Cluster Accuracy Std: {}".format(np.std(list(cluster_accuracy.values()))))
 
         #("Each Cluster Accuracy: ")
@@ -259,5 +263,5 @@ class Optimizer:
             cluster_accuracy[key] = cluster_accuracy[key]/value_sum
 
         #print(cluster_accuracy)
-        return cluster_accuracy
+        return cluster_accuracy, original_accuracy
 

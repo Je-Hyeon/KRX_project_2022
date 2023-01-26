@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import MaxAbsScaler
 
 def zscore(df):
     df_value = df.T.values
@@ -96,3 +96,14 @@ def pca(df):
     result.columns = tmp_columns
 
     return result
+
+def new_rank(df):
+    tmp_df = df.applymap(lambda x: 1 if x != 0 else x)
+    return df.rank(pct=True)#*tmp_df
+
+def sklearn_maxabs(df):
+    corp = df.index
+    factor = df.columns
+    model = MaxAbsScaler()
+    scaled_value = model.fit_transform(df)
+    return pd.DataFrame(scaled_value, index=corp, columns=factor)

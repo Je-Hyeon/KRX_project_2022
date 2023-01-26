@@ -400,6 +400,7 @@ class MyKmeans:
         online = False,
     ):
         if type(raw_data) == pd.core.frame.DataFrame:
+            tmp_index = raw_data.index
             raw_data = raw_data.values
 
         if demensional_reduction_model == "mds":
@@ -414,11 +415,11 @@ class MyKmeans:
 
         answer_df = pd.DataFrame(answer_data, columns=["answer"]).applymap(lambda x: 1 if x>0 else 2.5)
 
-        labels.index = raw_data.index
-        reducted_points.index = raw_data.index
+        labels.index = tmp_index
+        reducted_points.index = tmp_index
 
         result_df = pd.concat([reducted_points, labels], axis=1)
-        result_df = result_df.join(answer_df).fillna(0)
+        result_df = result_df.join(answer_df).fillna(2.5)
 
         fig = px.scatter_3d(
             result_df,
@@ -428,11 +429,13 @@ class MyKmeans:
             color='label',
             size ="answer",
             symbol="answer",
-            symbol_sequence=["circle","cross"],
+            symbol_sequence=["cross","circle"],
             title=fig_title
         )
-                
+        
         if online:
             chart_studio.plotly.plot(fig, auto_open=True)
         else:
-            fig.write_html("fig.html", auto_open=True)
+            fig.write_html("{}.html".format(fig_title), auto_open=True)
+
+        return result_df
