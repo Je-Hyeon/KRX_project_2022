@@ -123,7 +123,8 @@ def predict_cluster_result(model_save, raw_data, label_data,criterion_period:str
     except:
         return return_df.dropna(axis=1), return_df2.dropna(axis=1)
 
-def cluster_of_cluster_model(model_save,raw_data,eval_label, num_k, max_sample):
+def cluster_of_cluster_model(model_save,raw_data, eval_label, num_k, max_sample):
+    '''model, data 두가지를 리턴함'''
     return_model_save = {}
     return_masked_data = {}
 
@@ -140,7 +141,7 @@ def cluster_of_cluster_model(model_save,raw_data,eval_label, num_k, max_sample):
         return_masked_data[t] = masked_data
         return_model_save[t] = k_mean_dict
 
-    return return_model_save, masked_data
+    return return_model_save, return_masked_data
 
 def compare_predict_prob(predict_cluster_result, eval_cluster_result):
     '''predict_cluster_result의 리턴과 eval_cluster_result의 리턴을 받습니다
